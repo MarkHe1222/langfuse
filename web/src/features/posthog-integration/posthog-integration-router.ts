@@ -19,6 +19,7 @@ import {
   areLegacyWritesActive,
   InvalidRequestError,
   LangfuseNotFoundError,
+  LEGACY_ANALYTICS_EXPORTER_CUTOFF,
   validateExportSource,
 } from "@langfuse/shared";
 
@@ -138,9 +139,11 @@ export const posthogIntegrationRouter = createTRPCRouter({
           message: "PostHog Project API Key is required",
         });
       }
-      const createDefaultExportSource = legacyWritesActive
-        ? AnalyticsIntegrationExportSource.TRACES_OBSERVATIONS
-        : AnalyticsIntegrationExportSource.EVENTS;
+      const isCloud = Boolean(env.NEXT_PUBLIC_LANGFUSE_CLOUD_REGION);
+      const createDefaultExportSource =
+        isCloud || !legacyWritesActive
+          ? AnalyticsIntegrationExportSource.EVENTS
+          : AnalyticsIntegrationExportSource.TRACES_OBSERVATIONS;
       const nextExportSource =
         input.exportSource ??
         (existingIntegration ? undefined : createDefaultExportSource);
@@ -158,10 +161,12 @@ export const posthogIntegrationRouter = createTRPCRouter({
         nextExportSource,
         persistedExportSource: existingIntegration?.exportSource,
         ctx: {
-          isCloud: Boolean(env.NEXT_PUBLIC_LANGFUSE_CLOUD_REGION),
+          isCloud,
           enrichedAvailable: true,
           legacyWritesActive,
           projectCreatedAt,
+          integrationCreatedAt: existingIntegration?.createdAt ?? null,
+          exporterCutoff: LEGACY_ANALYTICS_EXPORTER_CUTOFF,
         },
       });
 
@@ -183,7 +188,12 @@ export const posthogIntegrationRouter = createTRPCRouter({
             posthogHostName: config.posthogHostname,
             encryptedPosthogApiKey,
             enabled: config.enabled,
-            exportSource: config.exportSource ?? createDefaultExportSource,
+            // Persisted value before the new-row default: a concurrent delete
+            // can turn this upsert into a CREATE that was meant as an UPDATE.
+            exportSource:
+              config.exportSource ??
+              existingIntegration?.exportSource ??
+              createDefaultExportSource,
           },
           update: {
             encryptedPosthogApiKey,
@@ -197,9 +207,9 @@ export const posthogIntegrationRouter = createTRPCRouter({
 
         // Race backstop (mirrors blob storage's service.ts): a concurrent
         // delete between the pre-flight read and this upsert can flip the
-        // expected UPDATE into a CREATE carrying the unvalidated legacy
-        // default. Detectable as a createdAt change; re-validate the persisted
-        // row as an explicit choice and roll back on failure.
+        // expected UPDATE into a CREATE. Detectable as a createdAt change;
+        // re-validate the row that landed as a brand-new one and roll back on
+        // failure.
         if (
           input.exportSource === undefined &&
           existingIntegration &&
@@ -210,10 +220,12 @@ export const posthogIntegrationRouter = createTRPCRouter({
             select: { createdAt: true },
           });
           const validation = validateExportSource(result.exportSource, {
-            isCloud: Boolean(env.NEXT_PUBLIC_LANGFUSE_CLOUD_REGION),
+            isCloud,
             enrichedAvailable: true,
             legacyWritesActive,
             projectCreatedAt: project.createdAt,
+            integrationCreatedAt: null,
+            exporterCutoff: LEGACY_ANALYTICS_EXPORTER_CUTOFF,
           });
           if (!validation.ok) throw new InvalidRequestError(validation.message);
         }
