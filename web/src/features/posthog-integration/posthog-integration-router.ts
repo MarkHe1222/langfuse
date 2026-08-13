@@ -192,6 +192,14 @@ export const posthogIntegrationRouter = createTRPCRouter({
             // undefined → Prisma omits the column → preserves the persisted
             // value on partial updates (LFE-10296).
             exportSource: config.exportSource,
+            // Intentionally inert today: at-most-once notification is
+            // guaranteed by the worker's atomic enabled true→false claim, not
+            // by this column, which the PostHog handler never reads or writes.
+            // Kept for parity with blob storage and as scaffolding should
+            // PostHog gain a retry-based notification path. lastError is
+            // deliberately left intact so the last fault stays visible until a
+            // successful run clears it.
+            ...(config.enabled ? { lastFailureNotificationSentAt: null } : {}),
           },
         });
 
