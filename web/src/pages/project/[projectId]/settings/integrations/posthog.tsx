@@ -32,17 +32,19 @@ import { posthogIntegrationFormSchema } from "@/src/features/posthog-integration
 import {
   AnalyticsIntegrationExportSource,
   validateExportSource,
+  type BlobExportWriteMode,
   type ExportSourceContext,
 } from "@langfuse/shared";
 import { Alert, AlertDescription, AlertTitle } from "@/src/components/ui/alert";
 // Shared export-source UI adapters; policy in export-source-policy.ts.
 import {
+  buildExportSourceContext,
+  getExportSourceFormValue,
   getExportSourceOptions,
   getExportSourceUnavailableMessage,
   isExportSourceSelectable,
   shouldHideExportSourceSelector,
 } from "@/src/features/analytics-integrations/exportSource";
-import { useV4Beta } from "@/src/features/events/hooks/useV4Beta";
 import { useLangfuseCloudRegion } from "@/src/features/organizations/hooks";
 import { useQueryProject } from "@/src/features/projects/hooks";
 import { useHasProjectAccess } from "@/src/features/rbac/utils/checkProjectAccess";
@@ -122,7 +124,7 @@ export default function PosthogIntegrationSettings() {
               state={state.data?.config ?? undefined}
               projectId={projectId}
               isLoading={state.isLoading}
-              legacyWritesActive={state.data?.legacyWritesActive ?? true}
+              writeMode={state.data?.writeMode ?? "legacy"}
             />
           </Card>
         </>
@@ -146,31 +148,28 @@ const PostHogIntegrationSettings = ({
   state,
   projectId,
   isLoading,
-  legacyWritesActive,
+  writeMode,
 }: {
   state?: NonNullable<RouterOutput["posthogIntegration"]["get"]["config"]>;
   projectId: string;
   isLoading: boolean;
-  legacyWritesActive: boolean;
+  writeMode: BlobExportWriteMode;
 }) => {
   const capture = usePostHogClientCapture();
-  const { isBetaEnabled } = useV4Beta();
   const { isLangfuseCloud } = useLangfuseCloudRegion();
   const { project } = useQueryProject();
 
-  // Policy context; EVENTS is always accepted by this router, hence
-  // enrichedAvailable: true (see export-source-policy.ts).
   const projectCreatedAt = project?.createdAt;
   const exportSourceCtx: ExportSourceContext = useMemo(
-    () => ({
-      isCloud: isLangfuseCloud,
-      enrichedAvailable: true,
-      legacyWritesActive,
-      projectCreatedAt: projectCreatedAt
-        ? new Date(projectCreatedAt)
-        : undefined,
-    }),
-    [isLangfuseCloud, legacyWritesActive, projectCreatedAt],
+    () =>
+      buildExportSourceContext({
+        writeMode,
+        isCloud: isLangfuseCloud,
+        projectCreatedAt: projectCreatedAt
+          ? new Date(projectCreatedAt)
+          : undefined,
+      }),
+    [writeMode, isLangfuseCloud, projectCreatedAt],
   );
   const legacyValidation = validateExportSource(
     AnalyticsIntegrationExportSource.TRACES_OBSERVATIONS,
@@ -184,14 +183,14 @@ const PostHogIntegrationSettings = ({
     state?.exportSource ?? null,
     exportSourceCtx,
   );
-  // Selector is beta-gated, except a persisted source blocked by capability
-  // forces it visible so the blocked-save alert has something to point at.
+  // A persisted source blocked by capability forces the selector visible even
+  // on post-cutoff Cloud, so the blocked-save alert has something to point at.
   const persistedBlockedByCapability =
     state?.exportSource != null &&
     !isPostCutoffCloud &&
     !isExportSourceSelectable(state.exportSource, exportSourceCtx);
   const showExportSourceField =
-    ((isBetaEnabled && !isPostCutoffCloud) || persistedBlockedByCapability) &&
+    (!isPostCutoffCloud || persistedBlockedByCapability) &&
     !shouldHideExportSourceSelector(exportSourceOptions);
 
   // Blocked-save validation instead of silent rewrite (LFE-10296).
@@ -221,10 +220,7 @@ const PostHogIntegrationSettings = ({
 
   const defaultExportSource = isPostCutoffCloud
     ? AnalyticsIntegrationExportSource.EVENTS
-    : (state?.exportSource ??
-      (isBetaEnabled || !legacyWritesActive
-        ? AnalyticsIntegrationExportSource.EVENTS
-        : AnalyticsIntegrationExportSource.TRACES_OBSERVATIONS));
+    : getExportSourceFormValue(state?.exportSource, exportSourceCtx);
 
   const posthogForm = useForm({
     resolver: zodResolver(formSchema),
