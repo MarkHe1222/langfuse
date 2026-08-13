@@ -31,6 +31,7 @@ import { usePostHogClientCapture } from "@/src/features/posthog-analytics/usePos
 import { posthogIntegrationFormSchema } from "@/src/features/posthog-integration/types";
 import {
   AnalyticsIntegrationExportSource,
+  LEGACY_ANALYTICS_EXPORTER_CUTOFF,
   validateExportSource,
   type ExportSourceContext,
 } from "@langfuse/shared";
@@ -161,6 +162,7 @@ const PostHogIntegrationSettings = ({
   // Policy context; EVENTS is always accepted by this router, hence
   // enrichedAvailable: true (see export-source-policy.ts).
   const projectCreatedAt = project?.createdAt;
+  const integrationCreatedAt = state?.createdAt;
   const exportSourceCtx: ExportSourceContext = useMemo(
     () => ({
       isCloud: isLangfuseCloud,
@@ -169,8 +171,17 @@ const PostHogIntegrationSettings = ({
       projectCreatedAt: projectCreatedAt
         ? new Date(projectCreatedAt)
         : undefined,
+      integrationCreatedAt: integrationCreatedAt
+        ? new Date(integrationCreatedAt)
+        : null,
+      exporterCutoff: LEGACY_ANALYTICS_EXPORTER_CUTOFF,
     }),
-    [isLangfuseCloud, legacyWritesActive, projectCreatedAt],
+    [
+      isLangfuseCloud,
+      legacyWritesActive,
+      projectCreatedAt,
+      integrationCreatedAt,
+    ],
   );
   const legacyValidation = validateExportSource(
     AnalyticsIntegrationExportSource.TRACES_OBSERVATIONS,
@@ -184,14 +195,16 @@ const PostHogIntegrationSettings = ({
     state?.exportSource ?? null,
     exportSourceCtx,
   );
-  // Selector is beta-gated, except a persisted source blocked by capability
-  // forces it visible so the blocked-save alert has something to point at.
+  // Selector is beta-gated off Cloud, except a persisted source blocked by
+  // capability forces it visible so the blocked-save alert has something to
+  // point at.
   const persistedBlockedByCapability =
     state?.exportSource != null &&
     !isPostCutoffCloud &&
     !isExportSourceSelectable(state.exportSource, exportSourceCtx);
   const showExportSourceField =
-    ((isBetaEnabled && !isPostCutoffCloud) || persistedBlockedByCapability) &&
+    (((isLangfuseCloud || isBetaEnabled) && !isPostCutoffCloud) ||
+      persistedBlockedByCapability) &&
     !shouldHideExportSourceSelector(exportSourceOptions);
 
   // Blocked-save validation instead of silent rewrite (LFE-10296).
@@ -222,7 +235,7 @@ const PostHogIntegrationSettings = ({
   const defaultExportSource = isPostCutoffCloud
     ? AnalyticsIntegrationExportSource.EVENTS
     : (state?.exportSource ??
-      (isBetaEnabled || !legacyWritesActive
+      (isLangfuseCloud || isBetaEnabled || !legacyWritesActive
         ? AnalyticsIntegrationExportSource.EVENTS
         : AnalyticsIntegrationExportSource.TRACES_OBSERVATIONS));
 
