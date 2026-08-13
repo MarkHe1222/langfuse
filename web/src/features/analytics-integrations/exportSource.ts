@@ -94,7 +94,6 @@ const EXPORT_SOURCE_UNAVAILABLE_MESSAGES: Record<
   ExportSourceBlockedReason,
   string
 > = {
-  // Self-hosted-operator-facing: naming the env var is intentional.
   "enriched-unavailable":
     "This integration is configured to export enriched observations, but this deployment runs LANGFUSE_MIGRATION_V4_WRITE_MODE=legacy and does not write the enriched observations table. Saving is blocked until you select an available export source above.",
   "cloud-cutoff":
