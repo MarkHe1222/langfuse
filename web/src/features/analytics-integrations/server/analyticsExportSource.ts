@@ -58,12 +58,12 @@ function buildContext(
  * UPDATE; assertRacedCreateAllowed then judges whatever landed.
  */
 export async function resolveAnalyticsExportSource({
-  tx,
+  db,
   projectId,
   requestedExportSource,
   existingIntegration,
 }: {
-  tx: Prisma.TransactionClient;
+  db: Prisma.TransactionClient;
   projectId: string;
   requestedExportSource: AnalyticsIntegrationExportSource | undefined;
   existingIntegration: ExistingAnalyticsIntegration | null | undefined;
@@ -81,7 +81,7 @@ export async function resolveAnalyticsExportSource({
   // create-defaulted) sources.
   const projectCreatedAt = nextExportSource
     ? (
-        await tx.project.findUniqueOrThrow({
+        await db.project.findUniqueOrThrow({
           where: { id: projectId },
           select: { createdAt: true },
         })

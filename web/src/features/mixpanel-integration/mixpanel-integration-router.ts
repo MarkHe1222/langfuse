@@ -120,7 +120,7 @@ export const mixpanelIntegrationRouter = createTRPCRouter({
         });
       }
       const createExportSource = await resolveAnalyticsExportSource({
-        tx: ctx.prisma,
+        db: ctx.prisma,
         projectId: input.projectId,
         requestedExportSource: input.exportSource,
         existingIntegration,
