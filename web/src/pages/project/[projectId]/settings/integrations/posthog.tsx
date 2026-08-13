@@ -30,7 +30,6 @@ import {
 import { usePostHogClientCapture } from "@/src/features/posthog-analytics/usePostHogClientCapture";
 import { posthogIntegrationFormSchema } from "@/src/features/posthog-integration/types";
 import {
-  AnalyticsIntegrationExportSource,
   validateExportSource,
   type BlobExportWriteMode,
   type ExportSourceContext,
@@ -39,11 +38,9 @@ import { Alert, AlertDescription, AlertTitle } from "@/src/components/ui/alert";
 // Shared export-source UI adapters; policy in export-source-policy.ts.
 import {
   buildExportSourceContext,
-  getExportSourceFormValue,
-  getExportSourceOptions,
+  getExportSourceFieldState,
   getExportSourceUnavailableMessage,
   isExportSourceSelectable,
-  shouldHideExportSourceSelector,
 } from "@/src/features/analytics-integrations/exportSource";
 import { useLangfuseCloudRegion } from "@/src/features/organizations/hooks";
 import { useQueryProject } from "@/src/features/projects/hooks";
@@ -171,27 +168,11 @@ const PostHogIntegrationSettings = ({
       }),
     [writeMode, isLangfuseCloud, projectCreatedAt],
   );
-  const legacyValidation = validateExportSource(
-    AnalyticsIntegrationExportSource.TRACES_OBSERVATIONS,
-    exportSourceCtx,
-  );
-  // Post-cutoff Cloud projects: field hidden, form value pinned to EVENTS via
-  // the default below (LFE-9688 / 9830 behavior, unchanged).
-  const isPostCutoffCloud =
-    !legacyValidation.ok && legacyValidation.reason === "cloud-cutoff";
-  const exportSourceOptions = getExportSourceOptions(
-    state?.exportSource ?? null,
-    exportSourceCtx,
-  );
-  // A persisted source blocked by capability forces the selector visible even
-  // on post-cutoff Cloud, so the blocked-save alert has something to point at.
-  const persistedBlockedByCapability =
-    state?.exportSource != null &&
-    !isPostCutoffCloud &&
-    !isExportSourceSelectable(state.exportSource, exportSourceCtx);
-  const showExportSourceField =
-    (!isPostCutoffCloud || persistedBlockedByCapability) &&
-    !shouldHideExportSourceSelector(exportSourceOptions);
+  const {
+    options: exportSourceOptions,
+    showField: showExportSourceField,
+    defaultValue: defaultExportSource,
+  } = getExportSourceFieldState(state?.exportSource, exportSourceCtx);
 
   // Blocked-save validation instead of silent rewrite (LFE-10296).
   const formSchema = useMemo(
@@ -217,10 +198,6 @@ const PostHogIntegrationSettings = ({
       }),
     [exportSourceCtx, state],
   );
-
-  const defaultExportSource = isPostCutoffCloud
-    ? AnalyticsIntegrationExportSource.EVENTS
-    : getExportSourceFormValue(state?.exportSource, exportSourceCtx);
 
   const posthogForm = useForm({
     resolver: zodResolver(formSchema),

@@ -89,6 +89,42 @@ export function getExportSourceOptions(
   });
 }
 
+export type ExportSourceFieldState = {
+  options: SelectableExportSourceOption[];
+  showField: boolean;
+  defaultValue: AnalyticsIntegrationExportSource;
+};
+
+// Everything the PostHog and Mixpanel export-source fields need. Post-cutoff
+// Cloud projects hide the field and pin EVENTS, except when the persisted
+// source is blocked by capability: then the selector stays visible so the
+// blocked-save alert has something to point at.
+export function getExportSourceFieldState(
+  persisted: AnalyticsIntegrationExportSource | null | undefined,
+  ctx: ExportSourceContext,
+): ExportSourceFieldState {
+  const legacyValidation = validateExportSource(
+    AnalyticsIntegrationExportSource.TRACES_OBSERVATIONS,
+    ctx,
+  );
+  const isPostCutoffCloud =
+    !legacyValidation.ok && legacyValidation.reason === "cloud-cutoff";
+  const options = getExportSourceOptions(persisted ?? null, ctx);
+  const persistedBlockedByCapability =
+    persisted != null &&
+    !isPostCutoffCloud &&
+    !isExportSourceSelectable(persisted, ctx);
+  return {
+    options,
+    showField:
+      (!isPostCutoffCloud || persistedBlockedByCapability) &&
+      !shouldHideExportSourceSelector(options),
+    defaultValue: isPostCutoffCloud
+      ? AnalyticsIntegrationExportSource.EVENTS
+      : getExportSourceFormValue(persisted, ctx),
+  };
+}
+
 // Blocked-save alert body per policy reason.
 const EXPORT_SOURCE_UNAVAILABLE_MESSAGES: Record<
   ExportSourceBlockedReason,
