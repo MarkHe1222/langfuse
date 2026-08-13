@@ -52,9 +52,10 @@ import { api } from "@/src/utils/api";
 import { type RouterOutput } from "@/src/utils/types";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Card } from "@/src/components/ui/card";
+import { Skeleton } from "@/src/components/ui/skeleton";
 import Link from "next/link";
 import { useRouter } from "next/router";
-import { useEffect, useMemo } from "react";
+import { useMemo } from "react";
 import { useForm } from "react-hook-form";
 import { type z } from "zod";
 import { Info, ExternalLink } from "lucide-react";
@@ -73,6 +74,8 @@ export default function MixpanelIntegrationSettings() {
       enabled: hasAccess,
     },
   );
+
+  const { project } = useQueryProject();
 
   const status =
     state.isLoading || !hasAccess
@@ -120,12 +123,23 @@ export default function MixpanelIntegrationSettings() {
           <Header title="Configuration" />
           <Card className="p-3">
             <MixpanelLogo className="text-foreground mb-4 w-20" />
-            <MixpanelIntegrationSettingsForm
-              state={state.data?.config ?? undefined}
-              projectId={projectId}
-              isLoading={state.isLoading}
-              writeMode={state.data?.writeMode ?? "legacy"}
-            />
+            {!state.data || !project ? (
+              <div className="space-y-3">
+                <Skeleton className="h-9 w-full" />
+                <Skeleton className="h-9 w-full" />
+                <Skeleton className="h-9 w-full" />
+              </div>
+            ) : (
+              <MixpanelIntegrationSettingsForm
+                // Draft lifetime = entity identity, so background refetches
+                // cannot reset a draft in progress.
+                key={`${projectId}:${state.data.config ? "configured" : "new"}`}
+                state={state.data.config ?? undefined}
+                projectId={projectId}
+                writeMode={state.data.writeMode}
+                projectCreatedAt={new Date(project.createdAt)}
+              />
+            )}
           </Card>
         </>
       )}
@@ -147,27 +161,22 @@ export default function MixpanelIntegrationSettings() {
 const MixpanelIntegrationSettingsForm = ({
   state,
   projectId,
-  isLoading,
   writeMode,
+  projectCreatedAt,
 }: {
   state?: NonNullable<RouterOutput["mixpanelIntegration"]["get"]["config"]>;
   projectId: string;
-  isLoading: boolean;
   writeMode: BlobExportWriteMode;
+  projectCreatedAt: Date;
 }) => {
   const capture = usePostHogClientCapture();
   const { isLangfuseCloud } = useLangfuseCloudRegion();
-  const { project } = useQueryProject();
-
-  const projectCreatedAt = project?.createdAt;
   const exportSourceCtx: ExportSourceContext = useMemo(
     () =>
       buildExportSourceContext({
         writeMode,
         isCloud: isLangfuseCloud,
-        projectCreatedAt: projectCreatedAt
-          ? new Date(projectCreatedAt)
-          : undefined,
+        projectCreatedAt,
       }),
     [writeMode, isLangfuseCloud, projectCreatedAt],
   );
@@ -212,20 +221,7 @@ const MixpanelIntegrationSettingsForm = ({
       enabled: state?.enabled ?? false,
       exportSource: defaultExportSource,
     },
-    disabled: isLoading,
   });
-
-  useEffect(() => {
-    mixpanelForm.reset({
-      mixpanelRegion:
-        (state?.mixpanelRegion as MixpanelRegion) ??
-        MIXPANEL_REGIONS[0].subdomain,
-      mixpanelProjectToken: "",
-      enabled: state?.enabled ?? false,
-      exportSource: defaultExportSource,
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state]);
 
   const watchedExportSource = mixpanelForm.watch("exportSource");
   const watchedValidation =
@@ -410,14 +406,13 @@ const MixpanelIntegrationSettingsForm = ({
         <Button
           loading={mut.isPending}
           onClick={mixpanelForm.handleSubmit(onSubmit)}
-          disabled={isLoading}
         >
           Save
         </Button>
         <Button
           variant="ghost"
           loading={mutDelete.isPending}
-          disabled={isLoading || !!!state}
+          disabled={!state}
           onClick={() => {
             if (
               confirm(
